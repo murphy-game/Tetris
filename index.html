@@ -45,17 +45,18 @@
             border: 2px solid var(--kana-light-pink);
             backdrop-filter: blur(5px);
         }
-        .title-box { display: flex; align-items: center; gap: 6px; font-weight: bold; font-size: 1rem; color: var(--kana-pink); }
-        .header-btn-group { display: flex; gap: 6px; align-items: center; }
+        .title-box { display: flex; align-items: center; gap: 4px; font-weight: bold; font-size: 0.95rem; color: var(--kana-pink); }
+        .header-btn-group { display: flex; gap: 4px; align-items: center; }
         .hud-icon-btn {
             background: #fff; border: 2px solid var(--kana-light-pink); border-radius: 50%;
-            width: 36px; height: 36px; font-size: 1rem; cursor: pointer;
+            width: 34px; height: 34px; font-size: 0.95rem; cursor: pointer;
             display: flex; justify-content: center; align-items: center;
         }
 
         .score-box { text-align: right; }
-        .score-box div { font-size: 0.7rem; color: #888; }
-        .score-box span { font-size: 1.1rem; font-weight: bold; color: var(--kana-pink); }
+        .score-box div { font-size: 0.65rem; color: #888; }
+        .score-box span { font-size: 1rem; font-weight: bold; color: var(--kana-pink); }
+        .score-box .high-score { color: #e67e22; margin-right: 4px; }
 
         /* Main Game Layout */
         .main-area {
@@ -144,17 +145,18 @@
         <!-- Header HUD -->
         <div class="header">
             <div class="title-box">
-                <img src="rabbit.png" id="rabbit-head-img" style="width:28px; height:28px; object-fit:contain;" onerror="this.style.display='none'; document.getElementById('emoji-head').style.display='inline';">
+                <img src="rabbit.png" id="rabbit-head-img" style="width:26px; height:26px; object-fit:contain;" onerror="this.style.display='none'; document.getElementById('emoji-head').style.display='inline';">
                 <span id="emoji-head" style="display:none;">🐰</span>
                 粉紅俄羅斯
             </div>
             <div class="header-btn-group">
                 <button class="hud-icon-btn" id="sound-btn" onclick="toggleSound()" title="音效開關">🔊</button>
+                <button class="hud-icon-btn" id="vibrate-btn" onclick="toggleVibrate()" title="震動開關">📳</button>
                 <button class="hud-icon-btn" onclick="togglePause()" title="暫停遊戲">⏸️</button>
             </div>
             <div class="score-box">
-                <div>SCORE</div>
-                <span id="score">0</span>
+                <div>BEST: <span id="high-score" class="high-score">0</span></div>
+                <div>SCORE: <span id="score">0</span></div>
             </div>
         </div>
 
@@ -220,13 +222,21 @@
         context.scale(20, 20);
         nextContext.scale(20, 20);
 
+        // Web Audio API 音效與震動控制
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         let audioCtx = null;
         let soundEnabled = true;
+        let vibrateEnabled = true;
 
         function initAudio() {
             if (!audioCtx) audioCtx = new AudioContext();
             if (audioCtx.state === 'suspended') audioCtx.resume();
+        }
+
+        function triggerVibrate(ms = 40) {
+            if (vibrateEnabled && navigator.vibrate) {
+                navigator.vibrate(ms);
+            }
         }
 
         function playSound(type) {
@@ -278,6 +288,12 @@
             document.getElementById('sound-btn').innerText = soundEnabled ? '🔊' : '🔇';
         }
 
+        function toggleVibrate() {
+            vibrateEnabled = !vibrateEnabled;
+            document.getElementById('vibrate-btn').innerText = vibrateEnabled ? '📳' : '📴';
+            if (vibrateEnabled) triggerVibrate(30);
+        }
+
         const colors = [
             null, '#ff75a0', '#ffb830', '#6c5ce7', '#00b894', '#00cec9', '#ff7675', '#fdcb6e'
         ];
@@ -298,6 +314,7 @@
             score: 0, lines: 0, level: 1
         };
 
+        let highScore = parseInt(localStorage.getItem('tetris_high_score')) || 0;
         let dropCounter = 0;
         let dropInterval = 1000;
         let lastTime = 0;
@@ -403,6 +420,7 @@
 
             if (clearedLines > 0) {
                 playSound('clear');
+                triggerVibrate(80); // 消除時觸發較明顯的震動
                 player.lines += clearedLines;
                 player.level = Math.floor(player.lines / 10) + 1;
                 dropInterval = Math.max(100, 1000 - (player.level - 1) * 100);
@@ -417,6 +435,7 @@
                 player.pos.y--;
                 merge(arena, player);
                 playSound('drop');
+                triggerVibrate(25); // 普通落地短震動
                 playerReset();
                 arenaSweep();
             }
@@ -431,6 +450,7 @@
             player.pos.y--;
             merge(arena, player);
             playSound('drop');
+            triggerVibrate(45); // 沉底強度震動
             playerReset();
             arenaSweep();
             dropCounter = 0;
@@ -441,6 +461,8 @@
             player.pos.x += dir;
             if (collide(arena, player)) {
                 player.pos.x -= dir;
+            } else {
+                triggerVibrate(15);
             }
         }
 
@@ -450,6 +472,7 @@
             let offset = 1;
             rotate(player.matrix);
             playSound('rotate');
+            triggerVibrate(20);
             while (collide(arena, player)) {
                 player.pos.x += offset;
                 offset = -(offset + (offset > 0 ? 1 : -1));
@@ -488,10 +511,20 @@
             if (collide(arena, player)) {
                 isGameOver = true;
                 playSound('gameover');
-                document.getElementById('modal-title').innerText = "Game Over";
-                document.getElementById('modal-desc').innerText = `獲得總分: ${player.score}`;
+                triggerVibrate(200); // 遊戲結束長震動
+
+                let isNewHigh = false;
+                if (player.score > highScore) {
+                    highScore = player.score;
+                    localStorage.setItem('tetris_high_score', highScore);
+                    isNewHigh = true;
+                }
+
+                document.getElementById('modal-title').innerText = isNewHigh ? "🎉 突破新紀錄！" : "Game Over";
+                document.getElementById('modal-desc').innerText = `獲得總分: ${player.score} (最高紀錄: ${highScore})`;
                 document.getElementById('modal-start-btn').innerText = "再玩一次 🌸";
                 document.getElementById('game-modal').classList.remove('hidden');
+                updateScore();
             }
         }
 
@@ -500,7 +533,7 @@
             isPaused = !isPaused;
             if (isPaused) {
                 document.getElementById('modal-title').innerText = "遊戲暫停中";
-                document.getElementById('modal-desc').innerText = `當前得分: ${player.score}`;
+                document.getElementById('modal-desc').innerText = `當前得分: ${player.score} (最高紀錄: ${highScore})`;
                 document.getElementById('modal-start-btn').innerText = "繼續遊戲 ▶️";
                 document.getElementById('game-modal').classList.remove('hidden');
             } else {
@@ -511,6 +544,7 @@
 
         function updateScore() {
             document.getElementById('score').innerText = player.score;
+            document.getElementById('high-score').innerText = highScore;
             document.getElementById('level').innerText = player.level;
             document.getElementById('lines').innerText = player.lines;
         }
@@ -560,6 +594,9 @@
             else if (event.keyCode === 38) playerRotate();   // Up Arrow
             else if (event.keyCode === 32) playerHardDrop(); // Space
         });
+
+        // 初始化顯示歷史最高分
+        updateScore();
     </script>
 </body>
 </html>
